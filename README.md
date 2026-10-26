@@ -115,6 +115,10 @@ Independent Windows Graphics Capture diagnostics could acquire a frame and conve
 
 The successful test covered one window and its transient menu on one Windows 10 system. It did **not** establish combined all-monitor capture, each monitor separately, all applications, reboot persistence, timeout/cancellation correctness, or prolonged stability. See [validation](docs/validation.md).
 
+## Optional update watcher
+
+For event-driven maintenance after installed runtime updates, see the optional [Capture Update Watch plugin](plugins/capture-update-watch/README.md). It queues work to an existing chat without a daily schedule; the watcher never patches a helper itself.
+
 ## Development checks
 
 ```powershell

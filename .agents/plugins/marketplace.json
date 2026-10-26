@@ -1,0 +1,20 @@
+{
+  "name": "capture-fix-local",
+  "interface": {
+    "displayName": "Windows Capture Fix"
+  },
+  "plugins": [
+    {
+      "name": "capture-update-watch",
+      "source": {
+        "source": "local",
+        "path": "./plugins/capture-update-watch"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer tools"
+    }
+  ]
+}

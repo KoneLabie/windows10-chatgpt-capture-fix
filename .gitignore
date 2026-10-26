@@ -11,6 +11,9 @@
 manifest.json
 candidate-manifest.json
 trial-status.json
+watcher-config.json
+watcher-state.json
+watcher-status.json
 upstream-patch*
 patch-computer-use-helper-win10.ps1
 stage/

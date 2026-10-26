@@ -1,0 +1,26 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "capture-update-watch",
+  "version": "0.1.2",
+  "description": "Watch installed Computer Use runtime changes and queue capture maintenance to an authorized existing Codex chat, without a daily schedule.",
+  "author": {
+    "name": "windows10-chatgpt-capture-fix contributors"
+  },
+  "repository": "https://github.com/KoneLabie/windows10-chatgpt-capture-fix",
+  "license": "MIT",
+  "keywords": ["windows", "capture", "maintenance"],
+  "extensions": {
+    "com.openai": {
+      "requires_local_executor": true,
+      "onboardingSkill": "./skills/setup/SKILL.md",
+      "interface": {
+        "displayName": "Capture Update Watch",
+        "shortDescription": "Queue capture checks after runtime updates",
+        "developerName": "windows10-chatgpt-capture-fix contributors",
+        "category": "Developer tools",
+        "capabilities": ["Read", "Write"],
+        "defaultPrompt": ["Set up capture maintenance after installed runtime updates."]
+      }
+    }
+  }
+}
