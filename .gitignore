@@ -1,0 +1,23 @@
+# Never publish proprietary helpers, generated candidates, backups, or logs.
+*.exe
+*.dll
+*.bin
+*.pdb
+*.evtx
+*.dmp
+*.log
+*.tmp
+*.request
+manifest.json
+candidate-manifest.json
+trial-status.json
+upstream-patch*
+patch-computer-use-helper-win10.ps1
+stage/
+staging/
+work/
+__pycache__/
+*.py[cod]
+.venv/
+.DS_Store
+Thumbs.db
