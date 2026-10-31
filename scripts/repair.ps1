@@ -16,10 +16,22 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$script:OriginalHash = '11825CB78575D9099AED8F13D16F78B03C20A1A0EBC809CF78B406FB2F25F5F8'
-$script:CandidateHash = '1071E8CC945EDDFC466637CF096852E670D21AFA396FE7CCA70B107C3DE3EFC5'
+$script:OriginalHash = $null
+$script:CandidateHash = $null
 $script:Lease = $null
 $script:TrialId = $null
+
+function Get-ExactProfile([string]$OriginalHash, [string]$CandidateHash) {
+    # Keep each original/candidate pair together, including for old-stage rollback.
+    $profiles = @{
+        '11825CB78575D9099AED8F13D16F78B03C20A1A0EBC809CF78B406FB2F25F5F8' = '1071E8CC945EDDFC466637CF096852E670D21AFA396FE7CCA70B107C3DE3EFC5'
+        '49C7F43DA0C2A9DBCADFB0C993058147018BF7C1D0FDE4360DE11ACE2C98F45D' = '25A8CD31B5BC44C387CBF53EC3FE4CD314B5FCAC0D8D84201F444F1B2DB10FAB'
+    }
+    if (-not $profiles.ContainsKey($OriginalHash) -or $profiles[$OriginalHash] -ne $CandidateHash) {
+        throw 'Manifest does not match a supported exact original/candidate hash pair.'
+    }
+    return [pscustomobject]@{ OriginalHash = $OriginalHash.ToUpperInvariant(); CandidateHash = $profiles[$OriginalHash] }
+}
 
 function Get-FileDigest([string]$Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
@@ -191,12 +203,13 @@ function Initialize-ValidatedPaths {
     $manifestPath = Join-Path $script:StageRoot 'manifest.json'
     Assert-PlainPath $manifestPath
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-    if ($manifest.input_sha256 -ne $script:OriginalHash -or
-        $manifest.candidate_sha256 -ne $script:CandidateHash -or
-        $manifest.original_filename -cne 'original.bin' -or
+    $profile = Get-ExactProfile $manifest.input_sha256 $manifest.candidate_sha256
+    if ($manifest.original_filename -cne 'original.bin' -or
         $manifest.candidate_filename -cne 'candidate.bin') {
-        throw 'Manifest does not match the single supported exact-build profile.'
+        throw 'Manifest filenames do not match the required staging filenames.'
     }
+    $script:OriginalHash = $profile.OriginalHash
+    $script:CandidateHash = $profile.CandidateHash
     $script:LivePath = [IO.Path]::GetFullPath([string]$manifest.helper_path)
     if ($manifest.helper_path -ne $script:LivePath) { throw 'Manifest helper_path must be absolute and normalized.' }
     Assert-PlainPath $script:LivePath

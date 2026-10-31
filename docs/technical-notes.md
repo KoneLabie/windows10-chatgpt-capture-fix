@@ -6,9 +6,15 @@ The narrow target is a Windows 10 Computer Use screenshot failure with working w
 
 The reviewed upstream approach replaces the frame callback entry with a short wrapper. The wrapper retains the callback object, gates processing with a once flag, starts a worker thread, closes the thread handle, and returns. The worker initializes WinRT in the multithreaded apartment, invokes the original callback body, uninitializes WinRT, and releases the retained object. The thread-creation failure path resets the flag and releases its reference.
 
-The exact candidate changes 552 byte values across 13 guarded regions while preserving the original 1,551,152-byte file length. It adds a readable/executable `.cuw10` section and two exception/unwind records, adjusts the callback routing, and clears the certificate directory. The original OpenAI signature therefore no longer applies.
+The first exact candidate changes 552 byte values; the October 31 candidate changes 551. Each uses 13 guarded regions and preserves its original 1,551,152-byte file length. Each adds a readable/executable `.cuw10` section and two exception/unwind records, adjusts the callback routing, and clears the certificate directory. The original OpenAI signature therefore no longer applies.
 
 The public upstream source lacks an exact profile for the tested original hash. This preparation adapts its `0.7.12-6FCC7C64` profile to the exact `0.7.13` input under a whole-file hash guard. Eleven region guards matched; the two differences were the checksum and certificate-overlay bytes. Similar version numbers or matching guards alone were not considered proof of compatibility. Whole-section equivalence with the older executable was not established.
+
+## October 31 exact-build review
+
+The updated signed original `49C7F43D...C98F45D` reproduced both timeout errors before repair. Two independent comparisons with the previously reviewed original `11825CB7...F5F8` found every one of its ten section headers and raw section contents identical. Imports, relocations, and unwind data also matched. All 9,236 differing byte values were confined to the COFF timestamp (3), PE checksum (3), and certificate overlay (9,230). Normalizing those three fields made the complete originals identical.
+
+The thirteen region checks had the same outcomes as before. The resulting candidate `25A8CD31...10FAB` has eleven section contents identical to the previously tested candidate; the build timestamp and unused certificate-overlay remainder differ outside those sections. The builder pins this new full input/output pair and its 551-byte difference count separately. The controller rejects a manifest combining an original from one profile with the candidate from the other, and restores the original belonging to the selected profile. This is evidence for these two exact builds, not permission to reuse offsets for future files.
 
 ## Static checks
 

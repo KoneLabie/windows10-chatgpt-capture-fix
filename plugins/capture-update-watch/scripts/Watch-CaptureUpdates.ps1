@@ -88,14 +88,19 @@ function Test-KnownRepairTransition([object]$Previous,[object]$Current) {
     if($null -eq $Previous) { return $false }
     if((@($Previous.package_versions) -join '|') -ne (@($Current.package_versions) -join '|')) { return $false }
     if(@($Previous.helpers).Count -ne @($Current.helpers).Count) { return $false }
+    # Exact reviewed forward pairs only; reverting to an original must queue again.
+    $knownRepairs = @{
+        '11825CB78575D9099AED8F13D16F78B03C20A1A0EBC809CF78B406FB2F25F5F8' = '1071E8CC945EDDFC466637CF096852E670D21AFA396FE7CCA70B107C3DE3EFC5'
+        '49C7F43DA0C2A9DBCADFB0C993058147018BF7C1D0FDE4360DE11ACE2C98F45D' = '25A8CD31B5BC44C387CBF53EC3FE4CD314B5FCAC0D8D84201F444F1B2DB10FAB'
+    }
     $changed = $false
     foreach($before in @($Previous.helpers)) {
         $matches = @($Current.helpers | Where-Object { $_.relative_path -eq $before.relative_path })
         if($matches.Count -ne 1) { return $false }
         $after = $matches[0]
         if($before.sha256 -eq $after.sha256 -and $before.size -eq $after.size) { continue }
-        if($before.sha256 -ne '11825CB78575D9099AED8F13D16F78B03C20A1A0EBC809CF78B406FB2F25F5F8' -or
-           $after.sha256 -ne '1071E8CC945EDDFC466637CF096852E670D21AFA396FE7CCA70B107C3DE3EFC5' -or
+        if(-not $knownRepairs.ContainsKey([string]$before.sha256) -or
+           $after.sha256 -ne $knownRepairs[[string]$before.sha256] -or
            $before.size -ne 1551152 -or $after.size -ne 1551152) { return $false }
         $changed = $true
     }

@@ -13,16 +13,20 @@ This is a community experiment, **not an official OpenAI update**. It changes a 
 
 ## Supported target
 
-Only this exact original executable is supported. A matching product version alone is insufficient.
+Only the two exact original executables below are supported. A matching product version alone is insufficient. The builder selects the profile by the complete original SHA-256; the controller requires its matching original/candidate pair, including for rollback.
 
 | Item | Tested value |
 | --- | --- |
-| OS | Windows 10 22H2, build 19045.7807, x64 |
-| Package | `OpenAI.Codex` 26.1021.3705.0 |
+| OS | Windows 10 22H2, build 19045, x64 |
 | Computer Use library | `@oai/sky` 0.7.13 |
 | Helper | `codex-computer-use.exe` |
-| Original SHA-256 | `11825CB78575D9099AED8F13D16F78B03C20A1A0EBC809CF78B406FB2F25F5F8` |
-| Repaired SHA-256 | `1071E8CC945EDDFC466637CF096852E670D21AFA396FE7CCA70B107C3DE3EFC5` |
+
+| Tested app package | Original SHA-256 | Repaired SHA-256 |
+| --- | --- | --- |
+| `26.1021.3705.0` | `11825CB78575D9099AED8F13D16F78B03C20A1A0EBC809CF78B406FB2F25F5F8` | `1071E8CC945EDDFC466637CF096852E670D21AFA396FE7CCA70B107C3DE3EFC5` |
+| `26.1027.3384.0` | `49C7F43DA0C2A9DBCADFB0C993058147018BF7C1D0FDE4360DE11ACE2C98F45D` | `25A8CD31B5BC44C387CBF53EC3FE4CD314B5FCAC0D8D84201F444F1B2DB10FAB` |
+
+Both profiles passed a live screenshot/menu/keyboard trial after the original helper reproduced the capture timeouts. The October 31 profile preserves the earlier profile and its recovery path. See the [validation record](docs/validation.md) for the exact scope.
 
 The tools reject unknown input/output hashes. They do not search for a similar version, patch every runtime, change BIOS/graphics settings, or install a driver. This is not a general fix for PC freezes, GPU resets, or every screenshot timeout.
 
@@ -105,7 +109,7 @@ If capture fails, restore immediately, or leave the first controller running unt
 
 The same `Rollback` command restores the verified original. It refuses to overwrite an unknown helper, including a newer app update. If it refuses, investigate the changed version rather than bypass the check. Retain `original.bin`, `manifest.json`, and this controller until you no longer need rollback.
 
-No automatic reapplication, scheduled task, service, or update blocker is installed. Prefer a supported vendor fix when available. Do not submit private logs or executable backups in public issues.
+The preparation and repair scripts install no automatic reapplication, scheduled task, service, or update blocker. The separately enabled optional watcher has its own logon task. Prefer a supported vendor fix when available. Do not submit private logs or executable backups in public issues.
 
 The controller leaves its status and trial signals in the staging folder. A per-helper lock file and uniquely named atomic `.backup.bin` copies remain beside the helper; they are local recovery artifacts, not files to publish.
 

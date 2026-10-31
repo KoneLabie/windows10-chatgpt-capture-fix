@@ -14,8 +14,17 @@ import re
 import struct
 import sys
 
-INPUT_SHA = "11825CB78575D9099AED8F13D16F78B03C20A1A0EBC809CF78B406FB2F25F5F8"
-OUTPUT_SHA = "1071E8CC945EDDFC466637CF096852E670D21AFA396FE7CCA70B107C3DE3EFC5"
+# Selection is by the entire original file, never by a package/version label.
+PROFILES = {
+    "11825CB78575D9099AED8F13D16F78B03C20A1A0EBC809CF78B406FB2F25F5F8": {
+        "candidate_sha256": "1071E8CC945EDDFC466637CF096852E670D21AFA396FE7CCA70B107C3DE3EFC5",
+        "changed_bytes": 552,
+    },
+    "49C7F43DA0C2A9DBCADFB0C993058147018BF7C1D0FDE4360DE11ACE2C98F45D": {
+        "candidate_sha256": "25A8CD31B5BC44C387CBF53EC3FE4CD314B5FCAC0D8D84201F444F1B2DB10FAB",
+        "changed_bytes": 551,
+    },
+}
 SOURCE_SHA = "8F961A6AB639F1E9FB2BE91F7F2F429F07CF9A68E80FCECD3654B525C60450D1"
 SOURCE_COMMIT = "14b418f71b3cd56b3c1cca41db5933dfbc30fbd1"
 SOURCE_URL = (
@@ -41,6 +50,12 @@ def must(condition, message):
 
 def sha(data):
     return hashlib.sha256(data).hexdigest().upper()
+
+
+def profile_for_hash(original_hash):
+    profile = PROFILES.get(original_hash)
+    must(profile is not None, "Original helper SHA-256 mismatch; unsupported build.")
+    return profile
 
 
 def parse_regions(source_data):
@@ -174,7 +189,8 @@ def apply_regions(original, regions):
 
 
 def build_candidate(original, source_data):
-    must(sha(original) == INPUT_SHA, "Original helper SHA-256 mismatch; unsupported build.")
+    original_hash = sha(original)
+    profile = profile_for_hash(original_hash)
     must(len(original) == FILE_SIZE, "Original helper size mismatch.")
     regions = parse_regions(source_data)
     before = PE(original)
@@ -182,8 +198,8 @@ def build_candidate(original, source_data):
     must([r["name"] for r in metadata if not r["old_profile_match"]]
          == ["pe-checksum", "mta-wrapper-and-unwind"], "Unexpected profile differences.")
     must(len(candidate) == len(original), "File length changed.")
-    must(sha(candidate) == OUTPUT_SHA, "Candidate SHA-256 mismatch; refusing output.")
-    must(changed == 552, "Unexpected changed-byte count.")
+    must(sha(candidate) == profile["candidate_sha256"], "Candidate SHA-256 mismatch; refusing output.")
+    must(changed == profile["changed_bytes"], "Unexpected changed-byte count.")
     after = PE(candidate)
     must(after.count == before.count + 1, "Unexpected section count.")
     section = after.sections[-1]
@@ -226,7 +242,8 @@ def build_candidate(original, source_data):
         fields = struct.unpack_from("8B", candidate, after.offset(rva))
         must(fields == (1, 5, 2, 0, 5, allocation_code, 1, 0x30),
              "Incorrect unwind records.")
-    return candidate, dict(regions=metadata, changed_bytes=changed, iat_checks=calls,
+    return candidate, dict(input_sha256=original_hash, candidate_sha256=profile["candidate_sha256"],
+                           regions=metadata, changed_bytes=changed, iat_checks=calls,
                            original_body_rva=hex(body_rva), vtable_slot_rva=hex(vtable_rva),
                            vtable_dir64_relocation=True, unwind_entries=entries[-2:])
 
@@ -254,11 +271,10 @@ def prepare(helper, patch_source, output_dir):
     source_data = patch_source.read_bytes()
     candidate, details = build_candidate(original, source_data)
     # Catch replacement of an input during static analysis before staging anything.
-    must(sha(helper.read_bytes()) == INPUT_SHA, "Helper changed during analysis.")
+    must(sha(helper.read_bytes()) == details["input_sha256"], "Helper changed during analysis.")
     must(sha(patch_source.read_bytes()) == SOURCE_SHA, "Source changed during analysis.")
     manifest = dict(
         schema_version=1, status="STATICALLY_STAGED_NOT_EXECUTED_NOT_INSTALLED",
-        input_sha256=INPUT_SHA, candidate_sha256=OUTPUT_SHA,
         helper_path=str(helper), original_filename="original.bin",
         candidate_filename="candidate.bin", file_size=FILE_SIZE,
         source_sha256=SOURCE_SHA, source_commit=SOURCE_COMMIT,

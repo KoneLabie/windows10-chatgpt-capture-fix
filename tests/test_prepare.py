@@ -13,6 +13,54 @@ SPEC.loader.exec_module(prepare)
 
 
 class PreparationGuards(unittest.TestCase):
+    PAIRS = [
+        ("11825CB78575D9099AED8F13D16F78B03C20A1A0EBC809CF78B406FB2F25F5F8",
+         "1071E8CC945EDDFC466637CF096852E670D21AFA396FE7CCA70B107C3DE3EFC5", 552),
+        ("49C7F43DA0C2A9DBCADFB0C993058147018BF7C1D0FDE4360DE11ACE2C98F45D",
+         "25A8CD31B5BC44C387CBF53EC3FE4CD314B5FCAC0D8D84201F444F1B2DB10FAB", 551),
+    ]
+
+    def test_both_exact_profiles_remain_available(self):
+        for original, candidate, changed in self.PAIRS:
+            with self.subTest(original=original):
+                profile = prepare.profile_for_hash(original)
+                self.assertEqual(profile["candidate_sha256"], candidate)
+                self.assertEqual(profile["changed_bytes"], changed)
+
+    def test_patched_hashes_are_not_accepted_as_originals(self):
+        for _, candidate, _ in self.PAIRS:
+            with self.subTest(candidate=candidate):
+                with self.assertRaisesRegex(prepare.PreparationError, "unsupported build"):
+                    prepare.profile_for_hash(candidate)
+
+    def test_cross_profile_output_rejected(self):
+        # Synthetic buffers isolate the pair guard; no proprietary fixture is needed.
+        data = bytes(prepare.FILE_SIZE)
+        metadata = [dict(name=name, old_profile_match=False)
+                    for name in ("pe-checksum", "mta-wrapper-and-unwind")]
+        for index, (original, _, changed) in enumerate(self.PAIRS):
+            other_candidate = self.PAIRS[1 - index][1]
+            with self.subTest(original=original):
+                with patch.object(prepare, "sha", side_effect=[original, other_candidate]), \
+                        patch.object(prepare, "parse_regions", return_value=[]), \
+                        patch.object(prepare, "PE"), \
+                        patch.object(prepare, "apply_regions", return_value=(data, metadata, changed)):
+                    with self.assertRaisesRegex(prepare.PreparationError, "Candidate SHA-256 mismatch"):
+                        prepare.build_candidate(data, b"source")
+
+    def test_each_profile_enforces_its_changed_byte_count(self):
+        data = bytes(prepare.FILE_SIZE)
+        metadata = [dict(name=name, old_profile_match=False)
+                    for name in ("pe-checksum", "mta-wrapper-and-unwind")]
+        for original, candidate, changed in self.PAIRS:
+            with self.subTest(original=original):
+                with patch.object(prepare, "sha", side_effect=[original, candidate]), \
+                        patch.object(prepare, "parse_regions", return_value=[]), \
+                        patch.object(prepare, "PE"), \
+                        patch.object(prepare, "apply_regions", return_value=(data, metadata, changed + 1)):
+                    with self.assertRaisesRegex(prepare.PreparationError, "changed-byte count"):
+                        prepare.build_candidate(data, b"source")
+
     def test_unknown_original_rejected_before_parsing(self):
         with patch.object(prepare, "parse_regions") as parse:
             with self.assertRaisesRegex(prepare.PreparationError, "unsupported build"):

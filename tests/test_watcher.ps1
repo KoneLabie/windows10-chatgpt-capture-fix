@@ -47,6 +47,29 @@ Assert-True ($script:deliveries -eq 2) 'reverted repair must not be hidden by ea
 $newPackage = New-SyntheticSnapshot 'new-package' $repaired.helpers[0].sha256 '2.0'
 Assert-True (-not (Test-KnownRepairTransition $original $newPackage)) 'package-version change must not be suppressed as self repair'
 
+$secondOriginal = New-SyntheticSnapshot 'second-original' '49C7F43DA0C2A9DBCADFB0C993058147018BF7C1D0FDE4360DE11ACE2C98F45D'
+$secondRepaired = New-SyntheticSnapshot 'second-repaired' '25A8CD31B5BC44C387CBF53EC3FE4CD314B5FCAC0D8D84201F444F1B2DB10FAB'
+$secondState = New-WatchState
+$deliveriesBeforeSecond = $script:deliveries
+Assert-True ((Update-StateForSnapshot $secondState $secondOriginal $save $dispatch) -eq 'baseline') 'second exact original may establish a quiet baseline'
+Assert-True ((Update-StateForSnapshot $secondState $secondRepaired $save $dispatch) -eq 'repair-observed') 'second reviewed original-to-repair transition should be suppressed'
+Assert-True ($script:deliveries -eq $deliveriesBeforeSecond) 'second known repair must not queue itself'
+Assert-True ((Update-StateForSnapshot $secondState $secondOriginal $save $dispatch) -eq 'queued') 'second original reappearing after repair should queue'
+Assert-True ($script:deliveries -eq ($deliveriesBeforeSecond+1)) 'second reverted repair should queue exactly once'
+Assert-True ((Update-StateForSnapshot $secondState $secondOriginal $save $dispatch) -eq 'unchanged') 'repeated second-original event must not duplicate delivery'
+Assert-True (-not (Test-KnownRepairTransition $original $secondRepaired)) 'first original paired with second candidate must not be suppressed'
+Assert-True (-not (Test-KnownRepairTransition $secondOriginal $repaired)) 'second original paired with first candidate must not be suppressed'
+$secondNewPackage = New-SyntheticSnapshot 'second-new-package' $secondRepaired.helpers[0].sha256 '2.0'
+Assert-True (-not (Test-KnownRepairTransition $secondOriginal $secondNewPackage)) 'second pair must not suppress a package-version change'
+$unknownCandidate = New-SyntheticSnapshot 'unknown-candidate' ('A'*64)
+Assert-True (-not (Test-KnownRepairTransition $secondOriginal $unknownCandidate)) 'an unknown candidate must not be suppressed'
+$otherRuntime = New-SyntheticSnapshot 'other-runtime' $secondRepaired.helpers[0].sha256
+$otherRuntime.helpers[0].relative_path = 'runtime2\bin\node_modules\@oai\sky\bin\windows\codex-computer-use.exe'
+Assert-True (-not (Test-KnownRepairTransition $secondOriginal $otherRuntime)) 'a changed runtime path must not be suppressed'
+$wrongSize = New-SyntheticSnapshot 'wrong-size' $secondRepaired.helpers[0].sha256
+$wrongSize.helpers[0].size = 1551153
+Assert-True (-not (Test-KnownRepairTransition $secondOriginal $wrongSize)) 'an unexpected size must not be suppressed'
+
 $unknown = New-SyntheticSnapshot 'delivery-unknown' ('9'*64)
 $unknownDispatch = {param($snapshot) $script:deliveries++; [pscustomobject]@{status='unknown';detail='Synthetic ambiguous exit.'}}
 $deliveredBefore = $state.last_delivered_fingerprint
