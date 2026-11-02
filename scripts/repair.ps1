@@ -91,6 +91,17 @@ function Get-ActiveTrialStatus {
     return $status
 }
 
+function ConvertTo-TrialDeadline([object]$Value) {
+    # ConvertFrom-Json can return DateTime rather than the original ISO string.
+    # Parsing that object as text can swap the month and day in another culture.
+    if ($Value -is [DateTimeOffset]) { return $Value }
+    if ($Value -is [DateTime]) { return [DateTimeOffset]::new($Value) }
+    if ($Value -is [string]) {
+        return [DateTimeOffset]::Parse($Value, [Globalization.CultureInfo]::InvariantCulture)
+    }
+    throw 'Trial deadline must be an ISO timestamp or a date value.'
+}
+
 function Try-AcquireLease {
     Assert-PlainPath $script:LeasePath
     try {
@@ -251,7 +262,7 @@ function Invoke-Repair {
         Assert-LeaseHeldElsewhere
         $status = Get-ActiveTrialStatus
         if ($status.stage -ne 'TrialReady' -or
-            [DateTimeOffset]::UtcNow -ge [DateTimeOffset]::Parse($status.detail.automatic_rollback_deadline_utc)) {
+            [DateTimeOffset]::UtcNow -ge (ConvertTo-TrialDeadline $status.detail.automatic_rollback_deadline_utc)) {
             throw 'The trial is not ready or its acceptance deadline has passed.'
         }
         if ((Get-FileDigest $script:LivePath) -ne $script:CandidateHash) { throw 'Candidate is not installed.' }
