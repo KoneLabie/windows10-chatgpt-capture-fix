@@ -18,14 +18,29 @@ class PreparationGuards(unittest.TestCase):
          "1071E8CC945EDDFC466637CF096852E670D21AFA396FE7CCA70B107C3DE3EFC5", 552),
         ("49C7F43DA0C2A9DBCADFB0C993058147018BF7C1D0FDE4360DE11ACE2C98F45D",
          "25A8CD31B5BC44C387CBF53EC3FE4CD314B5FCAC0D8D84201F444F1B2DB10FAB", 551),
+        ("F8AD259CAA82BC2A62C26CB1A3428E558D26959DE7B4D5BCE0D708F5C40E81D9",
+         "7BCF0B19481A96F478760A345B389AE47C44D6E2A6F745B331B9043CD9F7E804", 551),
     ]
 
-    def test_both_exact_profiles_remain_available(self):
+    def test_all_exact_profiles_remain_available(self):
         for original, candidate, changed in self.PAIRS:
             with self.subTest(original=original):
                 profile = prepare.profile_for_hash(original)
                 self.assertEqual(profile["candidate_sha256"], candidate)
                 self.assertEqual(profile["changed_bytes"], changed)
+
+    def test_unreviewed_cached_helper_is_rejected(self):
+        with self.assertRaisesRegex(prepare.PreparationError, "unsupported build"):
+            prepare.profile_for_hash("0EBB47BFAAF729E22BCDB08DCFCE1419EEFEDA80AFAEFED3EDBC088C24A2E778")
+
+    def test_sources_cannot_be_crossed_between_layouts(self):
+        for key in prepare.LAYOUTS:
+            layout = prepare.LAYOUTS[key]
+            other = prepare.LAYOUTS["november" if key == "october" else "october"]
+            with self.subTest(layout=key):
+                with patch.object(prepare, "sha", return_value=other["source_sha256"]):
+                    with self.assertRaisesRegex(prepare.PreparationError, "source SHA-256 mismatch"):
+                        prepare.parse_regions(b"not executed or decoded", layout)
 
     def test_patched_hashes_are_not_accepted_as_originals(self):
         for _, candidate, _ in self.PAIRS:
@@ -35,28 +50,34 @@ class PreparationGuards(unittest.TestCase):
 
     def test_cross_profile_output_rejected(self):
         # Synthetic buffers isolate the pair guard; no proprietary fixture is needed.
-        data = bytes(prepare.FILE_SIZE)
         metadata = [dict(name=name, old_profile_match=False)
                     for name in ("pe-checksum", "mta-wrapper-and-unwind")]
-        for index, (original, _, changed) in enumerate(self.PAIRS):
-            other_candidate = self.PAIRS[1 - index][1]
-            with self.subTest(original=original):
-                with patch.object(prepare, "sha", side_effect=[original, other_candidate]), \
-                        patch.object(prepare, "parse_regions", return_value=[]), \
-                        patch.object(prepare, "PE"), \
-                        patch.object(prepare, "apply_regions", return_value=(data, metadata, changed)):
-                    with self.assertRaisesRegex(prepare.PreparationError, "Candidate SHA-256 mismatch"):
-                        prepare.build_candidate(data, b"source")
+        for original, expected_candidate, changed in self.PAIRS:
+            layout = prepare.LAYOUTS[prepare.profile_for_hash(original)["layout"]]
+            data = bytes(layout["file_size"])
+            for _, other_candidate, _ in self.PAIRS:
+                if other_candidate == expected_candidate:
+                    continue
+                with self.subTest(original=original, candidate=other_candidate):
+                    with patch.object(prepare, "sha", side_effect=[original, other_candidate]), \
+                            patch.object(prepare, "parse_regions", return_value=[]), \
+                            patch.object(prepare, "PE"), \
+                            patch.object(prepare, "validate_original_layout"), \
+                            patch.object(prepare, "apply_regions", return_value=(data, metadata, changed)):
+                        with self.assertRaisesRegex(prepare.PreparationError, "Candidate SHA-256 mismatch"):
+                            prepare.build_candidate(data, b"source")
 
     def test_each_profile_enforces_its_changed_byte_count(self):
-        data = bytes(prepare.FILE_SIZE)
         metadata = [dict(name=name, old_profile_match=False)
                     for name in ("pe-checksum", "mta-wrapper-and-unwind")]
         for original, candidate, changed in self.PAIRS:
+            layout = prepare.LAYOUTS[prepare.profile_for_hash(original)["layout"]]
+            data = bytes(layout["file_size"])
             with self.subTest(original=original):
                 with patch.object(prepare, "sha", side_effect=[original, candidate]), \
                         patch.object(prepare, "parse_regions", return_value=[]), \
                         patch.object(prepare, "PE"), \
+                        patch.object(prepare, "validate_original_layout"), \
                         patch.object(prepare, "apply_regions", return_value=(data, metadata, changed + 1)):
                     with self.assertRaisesRegex(prepare.PreparationError, "changed-byte count"):
                         prepare.build_candidate(data, b"source")
@@ -68,8 +89,10 @@ class PreparationGuards(unittest.TestCase):
             parse.assert_not_called()
 
     def test_modified_upstream_source_rejected(self):
-        with self.assertRaisesRegex(prepare.PreparationError, "source SHA-256 mismatch"):
-            prepare.parse_regions(b"Write-Output 'this must never execute'")
+        for layout in prepare.LAYOUTS.values():
+            with self.subTest(layout=layout["source_profile"]):
+                with self.assertRaisesRegex(prepare.PreparationError, "source SHA-256 mismatch"):
+                    prepare.parse_regions(b"Write-Output 'this must never execute'", layout)
 
     def test_region_mismatch_preserves_original(self):
         original = b"abcdef"

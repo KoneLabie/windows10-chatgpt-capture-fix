@@ -31,7 +31,8 @@ function Assert-Throws([scriptblock]$Operation, [string]$Message) {
 
 $profilePairs = @(
     @('11825CB78575D9099AED8F13D16F78B03C20A1A0EBC809CF78B406FB2F25F5F8', '1071E8CC945EDDFC466637CF096852E670D21AFA396FE7CCA70B107C3DE3EFC5'),
-    @('49C7F43DA0C2A9DBCADFB0C993058147018BF7C1D0FDE4360DE11ACE2C98F45D', '25A8CD31B5BC44C387CBF53EC3FE4CD314B5FCAC0D8D84201F444F1B2DB10FAB')
+    @('49C7F43DA0C2A9DBCADFB0C993058147018BF7C1D0FDE4360DE11ACE2C98F45D', '25A8CD31B5BC44C387CBF53EC3FE4CD314B5FCAC0D8D84201F444F1B2DB10FAB'),
+    @('F8AD259CAA82BC2A62C26CB1A3428E558D26959DE7B4D5BCE0D708F5C40E81D9', '7BCF0B19481A96F478760A345B389AE47C44D6E2A6F745B331B9043CD9F7E804')
 )
 foreach ($pair in $profilePairs) {
     $selected = Get-ExactProfile $pair[0] $pair[1]
@@ -42,6 +43,14 @@ Assert-Throws { Get-ExactProfile $profilePairs[0][0] $profilePairs[1][1] } 'Old 
 Assert-Throws { Get-ExactProfile $profilePairs[1][0] $profilePairs[0][1] } 'New original/old candidate cross-pair was accepted.'
 Assert-Throws { Get-ExactProfile 'unknown' $profilePairs[0][1] } 'Unknown original was accepted.'
 Assert-Throws { Get-ExactProfile $profilePairs[0][0] 'unknown' } 'Unknown candidate was accepted.'
+Assert-Throws { Get-ExactProfile '0EBB47BFAAF729E22BCDB08DCFCE1419EEFEDA80AFAEFED3EDBC088C24A2E778' $profilePairs[2][1] } 'Unreviewed cached helper was accepted.'
+foreach ($originalPair in $profilePairs) {
+    foreach ($candidatePair in $profilePairs) {
+        if ($originalPair[0] -ne $candidatePair[0]) {
+            Assert-Throws { Get-ExactProfile $originalPair[0] $candidatePair[1] } 'Cross-profile pair accepted.'
+        }
+    }
+}
 
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ('capture-repair-tests-' + [Guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
@@ -89,11 +98,14 @@ $script:Lease.Dispose()
 $script:Lease = $null
 
 $manifestPath = Join-Path $fixtureRoot 'manifest.json'
-$rejectedPairs = @(
-    @('unknown', 'unknown'),
-    @($profilePairs[0][0], $profilePairs[1][1]),
-    @($profilePairs[1][0], $profilePairs[0][1])
-)
+$rejectedPairs = @(,@('unknown', 'unknown'))
+foreach ($originalPair in $profilePairs) {
+    foreach ($candidatePair in $profilePairs) {
+        if ($originalPair[0] -ne $candidatePair[0]) {
+            $rejectedPairs += ,@($originalPair[0], $candidatePair[1])
+        }
+    }
+}
 foreach ($pair in $rejectedPairs) {
     $badManifest = @{ input_sha256 = $pair[0]; candidate_sha256 = $pair[1]; helper_path = 'C:\invalid'; original_filename = 'original.bin'; candidate_filename = 'candidate.bin' }
     [IO.File]::WriteAllText($manifestPath, ($badManifest | ConvertTo-Json))
@@ -105,7 +117,7 @@ foreach ($pair in $rejectedPairs) {
 
 [ordered]@{
     syntax_valid = $true
-    both_exact_profiles_and_cross_pair_refusal = $true
+    all_three_exact_profiles_and_all_six_cross_pair_refusals = $true
     inert_atomic_replace_and_restore = $true
     atomic_backups_verified = $true
     unknown_target_and_source_refused = $true

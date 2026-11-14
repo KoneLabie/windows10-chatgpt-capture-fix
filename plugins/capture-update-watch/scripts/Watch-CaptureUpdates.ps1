@@ -90,8 +90,9 @@ function Test-KnownRepairTransition([object]$Previous,[object]$Current) {
     if(@($Previous.helpers).Count -ne @($Current.helpers).Count) { return $false }
     # Exact reviewed forward pairs only; reverting to an original must queue again.
     $knownRepairs = @{
-        '11825CB78575D9099AED8F13D16F78B03C20A1A0EBC809CF78B406FB2F25F5F8' = '1071E8CC945EDDFC466637CF096852E670D21AFA396FE7CCA70B107C3DE3EFC5'
-        '49C7F43DA0C2A9DBCADFB0C993058147018BF7C1D0FDE4360DE11ACE2C98F45D' = '25A8CD31B5BC44C387CBF53EC3FE4CD314B5FCAC0D8D84201F444F1B2DB10FAB'
+        '11825CB78575D9099AED8F13D16F78B03C20A1A0EBC809CF78B406FB2F25F5F8' = @{sha256='1071E8CC945EDDFC466637CF096852E670D21AFA396FE7CCA70B107C3DE3EFC5';size=1551152}
+        '49C7F43DA0C2A9DBCADFB0C993058147018BF7C1D0FDE4360DE11ACE2C98F45D' = @{sha256='25A8CD31B5BC44C387CBF53EC3FE4CD314B5FCAC0D8D84201F444F1B2DB10FAB';size=1551152}
+        'F8AD259CAA82BC2A62C26CB1A3428E558D26959DE7B4D5BCE0D708F5C40E81D9' = @{sha256='7BCF0B19481A96F478760A345B389AE47C44D6E2A6F745B331B9043CD9F7E804';size=1548592}
     }
     $changed = $false
     foreach($before in @($Previous.helpers)) {
@@ -99,9 +100,10 @@ function Test-KnownRepairTransition([object]$Previous,[object]$Current) {
         if($matches.Count -ne 1) { return $false }
         $after = $matches[0]
         if($before.sha256 -eq $after.sha256 -and $before.size -eq $after.size) { continue }
-        if(-not $knownRepairs.ContainsKey([string]$before.sha256) -or
-           $after.sha256 -ne $knownRepairs[[string]$before.sha256] -or
-           $before.size -ne 1551152 -or $after.size -ne 1551152) { return $false }
+        if(-not $knownRepairs.ContainsKey([string]$before.sha256)) { return $false }
+        $repair = $knownRepairs[[string]$before.sha256]
+        if($after.sha256 -ne $repair.sha256 -or
+           $before.size -ne $repair.size -or $after.size -ne $repair.size) { return $false }
         $changed = $true
     }
     return $changed

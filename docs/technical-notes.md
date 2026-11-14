@@ -16,6 +16,16 @@ The updated signed original `49C7F43D...C98F45D` reproduced both timeout errors 
 
 The thirteen region checks had the same outcomes as before. The resulting candidate `25A8CD31...10FAB` has eleven section contents identical to the previously tested candidate; the build timestamp and unused certificate-overlay remainder differ outside those sections. The builder pins this new full input/output pair and its 551-byte difference count separately. The controller rejects a manifest combining an original from one profile with the candidate from the other, and restores the original belonging to the selected profile. This is evidence for these two exact builds, not permission to reuse offsets for future files.
 
+## November 14 rebuilt executable
+
+The signed `0.7.18` original `F8AD259C...E81D9` is not a re-sign of the old layout. It has nine sections instead of ten, a different code body and import table, and a 1,548,592-byte file length. Twelve of the previous profile's thirteen guards fail. Even the newer pinned upstream `0.7.17-7F73CF56` profile matches only six unchanged guards; it cannot be applied verbatim.
+
+Independent disassembly and structural review identified the callback at RVA `0x42544`, its vtable slot at raw offset `0x12BB00`, and the same interface GUIDs and AddRef contract. All 3,124 callback instruction shapes and internal branch destinations match the earlier reviewed callback after external address operands are normalized. This comparison does not establish the semantics of external callees.
+
+The new mapping moves the busy and once branches to raw offsets `0x41979` and `0x4198A`, updates the worker's call to the current callback, and appends exception records at the actual table end `0x156878`. Reusing upstream's append offset would leave a gap. The new readable/executable section is at RVA `0x17C000`, raw `0x176400`; the four wrapper import destinations resolve to their intended current imports. A complete callback-body hash and branch destinations are checked in addition to full input/source/output hashes.
+
+The exact candidate `7BCF0B19...7E804` changes 551 byte values across thirteen regions and preserves file length, imports, relocations, and the original exception-table prefix. Independent reconstruction produced the identical candidate. Each old profile continues to require its original pinned source; the new profile requires a separate pinned source and layout. Version labels never choose a profile.
+
 ## Static checks
 
 - Entire original input and upstream text hashes are pinned before parsing or modification.

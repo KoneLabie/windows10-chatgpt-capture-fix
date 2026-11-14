@@ -19,10 +19,10 @@ function Assert-True([bool]$Condition,[string]$Message) {
     $script:checks++
 }
 
-function New-SyntheticSnapshot([string]$Fingerprint,[string]$Hash,[string]$Version='1.0') {
+function New-SyntheticSnapshot([string]$Fingerprint,[string]$Hash,[string]$Version='1.0',[long]$Size=1551152) {
     return [pscustomobject]@{
         fingerprint=$Fingerprint;package_versions=@($Version)
-        helpers=@([pscustomobject]@{relative_path='runtime1\bin\node_modules\@oai\sky\bin\windows\codex-computer-use.exe';sha256=$Hash;size=1551152})
+        helpers=@([pscustomobject]@{relative_path='runtime1\bin\node_modules\@oai\sky\bin\windows\codex-computer-use.exe';sha256=$Hash;size=$Size})
     }
 }
 
@@ -69,6 +69,51 @@ Assert-True (-not (Test-KnownRepairTransition $secondOriginal $otherRuntime)) 'a
 $wrongSize = New-SyntheticSnapshot 'wrong-size' $secondRepaired.helpers[0].sha256
 $wrongSize.helpers[0].size = 1551153
 Assert-True (-not (Test-KnownRepairTransition $secondOriginal $wrongSize)) 'an unexpected size must not be suppressed'
+
+$thirdOriginalHash = 'F8AD259CAA82BC2A62C26CB1A3428E558D26959DE7B4D5BCE0D708F5C40E81D9'
+$thirdRepairedHash = '7BCF0B19481A96F478760A345B389AE47C44D6E2A6F745B331B9043CD9F7E804'
+$thirdOriginal = New-SyntheticSnapshot 'third-original' $thirdOriginalHash -Size 1548592
+$thirdRepaired = New-SyntheticSnapshot 'third-repaired' $thirdRepairedHash -Size 1548592
+$thirdState = New-WatchState
+$deliveriesBeforeThird = $script:deliveries
+Assert-True ((Update-StateForSnapshot $thirdState $thirdOriginal $save $dispatch) -eq 'baseline') 'third original may establish a quiet baseline'
+Assert-True ((Update-StateForSnapshot $thirdState $thirdRepaired $save $dispatch) -eq 'repair-observed') 'third reviewed repair should be suppressed at its actual file size'
+Assert-True ($script:deliveries -eq $deliveriesBeforeThird) 'third known repair must not queue itself'
+Assert-True ((Update-StateForSnapshot $thirdState $thirdRepaired $save $dispatch) -eq 'unchanged') 'repeated third-repair event must remain quiet'
+Assert-True ((Update-StateForSnapshot $thirdState $thirdOriginal $save $dispatch) -eq 'queued') 'third original reappearing after repair should queue'
+Assert-True ($script:deliveries -eq ($deliveriesBeforeThird+1)) 'third reverted repair should queue exactly once'
+Assert-True ((Update-StateForSnapshot $thirdState $thirdOriginal $save $dispatch) -eq 'unchanged') 'repeated third-original event must not duplicate delivery'
+
+# Match sizes deliberately so a crossed pair cannot pass solely because the
+# two generations happen to have different file lengths.
+foreach($earlier in @(@($original,$repaired),@($secondOriginal,$secondRepaired))) {
+    $crossedNew = New-SyntheticSnapshot 'crossed-new' $thirdRepairedHash -Size $earlier[0].helpers[0].size
+    $crossedOld = New-SyntheticSnapshot 'crossed-old' $earlier[1].helpers[0].sha256 -Size 1548592
+    Assert-True (-not (Test-KnownRepairTransition $earlier[0] $crossedNew)) 'earlier original with third candidate must not be suppressed'
+    Assert-True (-not (Test-KnownRepairTransition $thirdOriginal $crossedOld)) 'third original with earlier candidate must not be suppressed'
+}
+$thirdNewPackage = New-SyntheticSnapshot 'third-new-package' $thirdRepairedHash '2.0' 1548592
+Assert-True (-not (Test-KnownRepairTransition $thirdOriginal $thirdNewPackage)) 'third pair must not suppress a package-version change'
+$thirdOtherRuntime = New-SyntheticSnapshot 'third-other-runtime' $thirdRepairedHash -Size 1548592
+$thirdOtherRuntime.helpers[0].relative_path = 'runtime2\bin\node_modules\@oai\sky\bin\windows\codex-computer-use.exe'
+Assert-True (-not (Test-KnownRepairTransition $thirdOriginal $thirdOtherRuntime)) 'third pair must not suppress a runtime-path change'
+$thirdWrongSize = New-SyntheticSnapshot 'third-wrong-size' $thirdRepairedHash -Size 1548593
+Assert-True (-not (Test-KnownRepairTransition $thirdOriginal $thirdWrongSize)) 'third pair must not suppress a size change'
+$thirdUnknown = New-SyntheticSnapshot 'third-unknown' ('A'*64) -Size 1548592
+Assert-True ((Update-StateForSnapshot $thirdState $thirdUnknown $save $dispatch) -eq 'queued') 'an unknown replacement after the third repair must queue'
+Assert-True ($script:deliveries -eq ($deliveriesBeforeThird+2)) 'unknown replacement should produce exactly one further delivery'
+
+# Real installations may retain another cached helper. It must be unchanged
+# for the known forward repair to be suppressed.
+$multiOriginal = New-SyntheticSnapshot 'multi-original' $thirdOriginalHash -Size 1548592
+$multiRepaired = New-SyntheticSnapshot 'multi-repaired' $thirdRepairedHash -Size 1548592
+$cachedHelper = [pscustomobject]@{relative_path='cached\bin\node_modules\@oai\sky\bin\windows\codex-computer-use.exe';sha256='0EBB47BFAAF729E22BCDB08DCFCE1419EEFEDA80AFAEFED3EDBC088C24A2E778';size=1548592}
+$multiOriginal.helpers += $cachedHelper
+$multiRepaired.helpers += $cachedHelper
+Assert-True (Test-KnownRepairTransition $multiOriginal $multiRepaired) 'an unchanged cached helper must not defeat known-repair suppression'
+$multiChanged = New-SyntheticSnapshot 'multi-changed' $thirdRepairedHash -Size 1548592
+$multiChanged.helpers += [pscustomobject]@{relative_path=$cachedHelper.relative_path;sha256=('B'*64);size=1548592}
+Assert-True (-not (Test-KnownRepairTransition $multiOriginal $multiChanged)) 'an additional changed cached helper must still trigger investigation'
 
 $unknown = New-SyntheticSnapshot 'delivery-unknown' ('9'*64)
 $unknownDispatch = {param($snapshot) $script:deliveries++; [pscustomobject]@{status='unknown';detail='Synthetic ambiguous exit.'}}

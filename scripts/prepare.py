@@ -19,20 +19,49 @@ PROFILES = {
     "11825CB78575D9099AED8F13D16F78B03C20A1A0EBC809CF78B406FB2F25F5F8": {
         "candidate_sha256": "1071E8CC945EDDFC466637CF096852E670D21AFA396FE7CCA70B107C3DE3EFC5",
         "changed_bytes": 552,
+        "layout": "october",
     },
     "49C7F43DA0C2A9DBCADFB0C993058147018BF7C1D0FDE4360DE11ACE2C98F45D": {
         "candidate_sha256": "25A8CD31B5BC44C387CBF53EC3FE4CD314B5FCAC0D8D84201F444F1B2DB10FAB",
         "changed_bytes": 551,
+        "layout": "october",
+    },
+    "F8AD259CAA82BC2A62C26CB1A3428E558D26959DE7B4D5BCE0D708F5C40E81D9": {
+        "candidate_sha256": "7BCF0B19481A96F478760A345B389AE47C44D6E2A6F745B331B9043CD9F7E804",
+        "changed_bytes": 551,
+        "layout": "november",
     },
 }
-SOURCE_SHA = "8F961A6AB639F1E9FB2BE91F7F2F429F07CF9A68E80FCECD3654B525C60450D1"
-SOURCE_COMMIT = "14b418f71b3cd56b3c1cca41db5933dfbc30fbd1"
-SOURCE_URL = (
-    "https://github.com/chen0416ccc-cpu/codex-windows-fast-patch-skill/blob/"
-    + SOURCE_COMMIT + "/scripts/patch-computer-use-helper-win10.ps1"
-)
-FILE_SIZE = 1551152
-PROFILE = "0.7.12-6FCC7C64"
+# These layouts are selected only by the whole-file hashes above. They are not
+# templates for arbitrary files reporting the same library version.
+LAYOUTS = {
+    "october": {
+        "file_size": 1551152,
+        "source_sha256": "8F961A6AB639F1E9FB2BE91F7F2F429F07CF9A68E80FCECD3654B525C60450D1",
+        "source_commit": "14b418f71b3cd56b3c1cca41db5933dfbc30fbd1",
+        "source_profile": "0.7.12-6FCC7C64",
+        "source_marker": "Name = '@oai/sky 0.7.12 helper 6FCC7C64",
+        "sky_version": "0.7.13",
+        "section_count": 10, "section_rva": 0x17E000, "section_raw": 0x176E00,
+        "vtable_raw": 0x12C8C8, "callback_rva": 0x42489,
+        "exception_rva": 0x151000, "exception_size": 0x84D8,
+        "exception_append": 0x1574D8,
+        "adapt_november": False,
+    },
+    "november": {
+        "file_size": 1548592,
+        "source_sha256": "D56FD5CBD327C9D8A230BBB048536F23AD4779BA8D2154467773BD641A171310",
+        "source_commit": "87bea9f9143cf904a579bdab30e96fe93678232e",
+        "source_profile": "0.7.17-7F73CF56-mapped-to-exact-0.7.18-F8AD259C",
+        "source_marker": "Name = '@oai/sky 0.7.17 helper 7F73CF56",
+        "sky_version": "0.7.18",
+        "section_count": 9, "section_rva": 0x17C000, "section_raw": 0x176400,
+        "vtable_raw": 0x12BB00, "callback_rva": 0x42544,
+        "exception_rva": 0x150000, "exception_size": 0x8478,
+        "exception_append": 0x156878,
+        "adapt_november": True,
+    },
+}
 UNSIGNED_WARNING = (
     "Experimental, unsupported modification. The candidate is unsigned; its "
     "embedded signature is removed. Do not weaken Windows security policy."
@@ -58,11 +87,11 @@ def profile_for_hash(original_hash):
     return profile
 
 
-def parse_regions(source_data):
+def parse_regions(source_data, layout):
     """Accept only the reviewed source bytes, then parse literal records."""
-    must(sha(source_data) == SOURCE_SHA, "Upstream source SHA-256 mismatch.")
+    must(sha(source_data) == layout["source_sha256"], "Upstream source SHA-256 mismatch.")
     source = source_data.decode("utf-8-sig")
-    marker = "Name = '@oai/sky 0.7.12 helper 6FCC7C64"
+    marker = layout["source_marker"]
     must(source.count(marker) == 1, "Expected exactly one reviewed profile.")
     profile = source[source.index(marker):]
     profile = profile[:profile.index("function Write-Log")]
@@ -79,7 +108,27 @@ def parse_regions(source_data):
     ]
     must(len(regions) == 13, "Expected thirteen reviewed regions.")
     must(len({r["name"] for r in regions}) == 13, "Duplicate region name.")
+    if layout["adapt_november"]:
+        adapt_november_regions(regions)
     return regions
+
+
+def adapt_november_regions(regions):
+    """Apply the separately reviewed F8AD mapping to pinned upstream records."""
+    by_name = {r["name"]: r for r in regions}
+    by_name["frame-arrived-busy-return"]["offset"] = 0x41979
+    by_name["frame-arrived-once-flag"]["offset"] = 0x4198A
+    by_name["frame-arrived-vtable"]["original"] = struct.pack("<Q", 0x140042544)
+    for name in ("pe-exception-directory-size", "pdata-virtual-size"):
+        by_name[name]["original"] = struct.pack("<I", 0x8478)
+        by_name[name]["patched"] = struct.pack("<I", 0x8490)
+    by_name["mta-runtime-functions"]["offset"] = 0x156878
+    worker = bytearray(by_name["mta-wrapper-and-unwind"]["patched"])
+    must(worker[0x96] == 0xE8, "Expected direct original-callback call.")
+    upstream_target = 0x17C000 + 0x9B + struct.unpack_from("<i", worker, 0x97)[0]
+    must(upstream_target == 0x4247A, "Unexpected upstream callback destination.")
+    struct.pack_into("<i", worker, 0x97, 0x42544 - (0x17C000 + 0x9B))
+    by_name["mta-wrapper-and-unwind"]["patched"] = bytes(worker)
 
 
 class PE:
@@ -188,12 +237,37 @@ def apply_regions(original, regions):
     return bytes(candidate), metadata, len(differences)
 
 
+def validate_original_layout(original, before, layout):
+    must(before.count == layout["section_count"] and before.image_size == layout["section_rva"],
+         "Unexpected original PE extent.")
+    must(before.directory(3) == (layout["exception_rva"], layout["exception_size"]),
+         "Unexpected original exception directory.")
+    must(before.directory(4) == (layout["section_raw"], 0x3D30),
+         "Unexpected original certificate directory.")
+    append = layout["exception_append"]
+    must(before.offset(layout["exception_rva"]) + layout["exception_size"] == append,
+         "Incorrect exception append position.")
+    must(original[append:append + 24] == bytes(24), "Nonzero exception padding.")
+    must(before.u64(layout["vtable_raw"]) == before.base + layout["callback_rva"],
+         "Original callback vtable changed.")
+    if layout["adapt_november"]:
+        callback = original[before.offset(0x42544):before.offset(0x45BDE)]
+        must(sha(callback) == "D91DCF08268861A239E394031B7FCEE921E0F3FCCE4DA4953ABFA4F038A8723E",
+             "Callback body changed.")
+        must(original[0x41979:0x4197F] == bytes.fromhex("0f855b310000"), "Busy branch changed.")
+        must(0x42579 + 6 + struct.unpack_from("<i", original, 0x4197B)[0] == 0x456DA,
+             "Original busy destination changed.")
+        must(original[0x4198A:0x4198C] == bytes.fromhex("740d"), "Once branch changed.")
+
+
 def build_candidate(original, source_data):
     original_hash = sha(original)
     profile = profile_for_hash(original_hash)
-    must(len(original) == FILE_SIZE, "Original helper size mismatch.")
-    regions = parse_regions(source_data)
+    layout = LAYOUTS[profile["layout"]]
+    must(len(original) == layout["file_size"], "Original helper size mismatch.")
+    regions = parse_regions(source_data, layout)
     before = PE(original)
+    validate_original_layout(original, before, layout)
     candidate, metadata, changed = apply_regions(original, regions)
     must([r["name"] for r in metadata if not r["old_profile_match"]]
          == ["pe-checksum", "mta-wrapper-and-unwind"], "Unexpected profile differences.")
@@ -201,22 +275,27 @@ def build_candidate(original, source_data):
     must(sha(candidate) == profile["candidate_sha256"], "Candidate SHA-256 mismatch; refusing output.")
     must(changed == profile["changed_bytes"], "Unexpected changed-byte count.")
     after = PE(candidate)
+    if layout["adapt_november"]:
+        must(0x42579 + 6 + struct.unpack_from("<i", candidate, 0x4197B)[0] == 0x456BC,
+             "Patched busy destination changed.")
     must(after.count == before.count + 1, "Unexpected section count.")
     section = after.sections[-1]
-    must(section == dict(name=".cuw10", virtual_size=0xD0, rva=0x17E000,
-                         raw_size=0x200, raw=0x176E00, flags=0x60000020),
+    section_rva = layout["section_rva"]
+    must(section == dict(name=".cuw10", virtual_size=0xD0, rva=section_rva,
+                         raw_size=0x200, raw=layout["section_raw"], flags=0x60000020),
          "Unexpected new section.")
     must(after.directory(4) == (0, 0), "Certificate directory not cleared.")
-    must(after.image_size == 0x17F000, "Unexpected image extent.")
+    must(after.image_size == section_rva + 0x1000, "Unexpected image extent.")
     for previous, current in zip(after.sections, after.sections[1:]):
         must(previous["rva"] + previous["virtual_size"] <= current["rva"],
              "Overlapping virtual sections.")
-    vtable_rva = before.rva(0x12C8C8)
+    vtable_rva = before.rva(layout["vtable_raw"])
     must(before.relocations().get(vtable_rva) == 10, "Missing vtable DIR64 relocation.")
-    must(after.u64(0x12C8C8) == after.base + section["rva"], "Incorrect vtable pointer.")
+    must(after.u64(layout["vtable_raw"]) == after.base + section_rva, "Incorrect vtable pointer.")
     must(before.relocations() == after.relocations(), "Relocations changed.")
     wrapper = candidate[section["raw"]:section["raw"] + 0xB2]
     imports = before.imports()
+    must(after.imports() == imports, "Imports changed.")
     calls = []
     for match in re.finditer(b"\xff\x15", wrapper):
         pos = match.start()
@@ -228,17 +307,23 @@ def build_candidate(original, source_data):
     call_pos = 0x96
     must(wrapper[call_pos] == 0xE8, "Original-body call moved.")
     body_rva = section["rva"] + call_pos + 5 + struct.unpack_from("<i", wrapper, call_pos + 1)[0]
-    must(body_rva == 0x42489, "Unexpected original function target.")
+    must(body_rva == layout["callback_rva"], "Unexpected original function target.")
     exception_rva, exception_size = after.directory(3)
-    must(exception_size == 0x84F0, "Incorrect exception-directory size.")
+    must((exception_rva, exception_size) == (layout["exception_rva"], layout["exception_size"] + 24),
+         "Incorrect exception directory.")
+    original_table = before.offset(exception_rva)
+    must(candidate[original_table:original_table + layout["exception_size"]]
+         == original[original_table:original_table + layout["exception_size"]],
+         "Original exception records changed.")
     entries = [struct.unpack_from("<III", candidate, after.offset(exception_rva) + i)
                for i in range(0, exception_size, 12)]
     must(all(a[0] < b[0] for a, b in zip(entries, entries[1:])), "Unsorted runtime functions.")
-    must(entries[-2:] == [(0x17E000, 0x17E072, 0x17E0C0),
-                         (0x17E080, 0x17E0B2, 0x17E0C8)], "Incorrect runtime functions.")
+    must(entries[-2:] == [(section_rva, section_rva + 0x72, section_rva + 0xC0),
+                         (section_rva + 0x80, section_rva + 0xB2, section_rva + 0xC8)],
+         "Incorrect runtime functions.")
     # UNWIND_INFO: version 1, five-byte prologue, two codes, no frame register;
     # allocation of 48/32 bytes, then push RBX. These are metadata semantics.
-    for rva, allocation_code in [(0x17E0C0, 0x52), (0x17E0C8, 0x32)]:
+    for rva, allocation_code in [(section_rva + 0xC0, 0x52), (section_rva + 0xC8, 0x32)]:
         fields = struct.unpack_from("8B", candidate, after.offset(rva))
         must(fields == (1, 5, 2, 0, 5, allocation_code, 1, 0x30),
              "Incorrect unwind records.")
@@ -270,15 +355,18 @@ def prepare(helper, patch_source, output_dir):
     original = helper.read_bytes()
     source_data = patch_source.read_bytes()
     candidate, details = build_candidate(original, source_data)
+    layout = LAYOUTS[profile_for_hash(details["input_sha256"])["layout"]]
     # Catch replacement of an input during static analysis before staging anything.
     must(sha(helper.read_bytes()) == details["input_sha256"], "Helper changed during analysis.")
-    must(sha(patch_source.read_bytes()) == SOURCE_SHA, "Source changed during analysis.")
+    must(sha(patch_source.read_bytes()) == layout["source_sha256"], "Source changed during analysis.")
     manifest = dict(
         schema_version=1, status="STATICALLY_STAGED_NOT_EXECUTED_NOT_INSTALLED",
         helper_path=str(helper), original_filename="original.bin",
-        candidate_filename="candidate.bin", file_size=FILE_SIZE,
-        source_sha256=SOURCE_SHA, source_commit=SOURCE_COMMIT,
-        source_url=SOURCE_URL, source_profile=PROFILE, observed_sky_version="0.7.13",
+        candidate_filename="candidate.bin", file_size=layout["file_size"],
+        source_sha256=layout["source_sha256"], source_commit=layout["source_commit"],
+        source_url=("https://github.com/chen0416ccc-cpu/codex-windows-fast-patch-skill/blob/"
+                    + layout["source_commit"] + "/scripts/patch-computer-use-helper-win10.ps1"),
+        source_profile=layout["source_profile"], observed_sky_version=layout["sky_version"],
         unsigned_warning=UNSIGNED_WARNING, **details,
     )
     files = {"original.bin": original, "candidate.bin": candidate,

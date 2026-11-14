@@ -7,26 +7,27 @@ FrameArrived timed out: timed out waiting on channel
 window capture timed out: timed out waiting on channel
 ```
 
-On the tested machine, window discovery and accessibility text worked while screenshots of a fresh, responsive Notepad window repeatedly timed out. The repair restored three visibly verified screenshot requests and mouse/keyboard interaction. All three monitors remained connected.
+On the tested machine, window discovery and accessibility text worked while screenshots of a fresh, responsive Notepad window repeatedly timed out. The repair restored visible screenshots and mouse/keyboard interaction. The November 14 update was checked with the test window on all three monitors and after restarting the helper.
 
 This is a community experiment, **not an official OpenAI update**. It changes a native helper and removes its embedded signature. It may crash or hang the helper; app updates may overwrite it. No Windows security policy is disabled. If security software or execution policy blocks it, stop rather than weaken that protection.
 
 ## Supported target
 
-Only the two exact original executables below are supported. A matching product version alone is insufficient. The builder selects the profile by the complete original SHA-256; the controller requires its matching original/candidate pair, including for rollback.
+Only the three exact original executables below are supported. A matching product version alone is insufficient. The builder selects the profile and pinned upstream source by the complete original SHA-256; the controller requires its matching original/candidate pair, including for rollback.
 
 | Item | Tested value |
 | --- | --- |
 | OS | Windows 10 22H2, build 19045, x64 |
-| Computer Use library | `@oai/sky` 0.7.13 |
+| Computer Use library | `@oai/sky` 0.7.13 or 0.7.18, exact hashes below |
 | Helper | `codex-computer-use.exe` |
 
 | Tested app package | Original SHA-256 | Repaired SHA-256 |
 | --- | --- | --- |
 | `26.1021.3705.0` | `11825CB78575D9099AED8F13D16F78B03C20A1A0EBC809CF78B406FB2F25F5F8` | `1071E8CC945EDDFC466637CF096852E670D21AFA396FE7CCA70B107C3DE3EFC5` |
 | `26.1027.3384.0` | `49C7F43DA0C2A9DBCADFB0C993058147018BF7C1D0FDE4360DE11ACE2C98F45D` | `25A8CD31B5BC44C387CBF53EC3FE4CD314B5FCAC0D8D84201F444F1B2DB10FAB` |
+| `26.1106.6628.0` | `F8AD259CAA82BC2A62C26CB1A3428E558D26959DE7B4D5BCE0D708F5C40E81D9` | `7BCF0B19481A96F478760A345B389AE47C44D6E2A6F745B331B9043CD9F7E804` |
 
-Both profiles passed a live screenshot/menu/keyboard trial after the original helper reproduced the capture timeouts. The October 31 profile preserves the earlier profile and its recovery path. See the [validation record](docs/validation.md) for the exact scope.
+All three profiles passed a live screenshot/menu/keyboard trial after the original helper reproduced the capture timeouts. The November profile uses a separately reviewed layout and preserves both earlier profiles and their recovery paths. See the [validation record](docs/validation.md) for the exact scope.
 
 The tools reject unknown input/output hashes. They do not search for a similar version, patch every runtime, change BIOS/graphics settings, or install a driver. This is not a general fix for PC freezes, GPU resets, or every screenshot timeout.
 
@@ -52,13 +53,19 @@ Prerequisites: Python 3.9 or newer, PowerShell, the supported installed helper, 
 
    Do not choose an arbitrary runtime if several exist. The preparation step requires the original, unmodified file. A previously patched installation should not be patched again.
 
-3. Save the pinned [upstream patch source](https://raw.githubusercontent.com/chen0416ccc-cpu/codex-windows-fast-patch-skill/14b418f71b3cd56b3c1cca41db5933dfbc30fbd1/scripts/patch-computer-use-helper-win10.ps1) as a local text file **without running it**. Its required SHA-256 is:
+3. Save the upstream source for your exact original hash as a local text file **without running it**. For either October profile (`11825CB7...` or `49C7F43D...`), use this pinned [October source](https://raw.githubusercontent.com/chen0416ccc-cpu/codex-windows-fast-patch-skill/14b418f71b3cd56b3c1cca41db5933dfbc30fbd1/scripts/patch-computer-use-helper-win10.ps1), whose required SHA-256 is:
 
    ```text
    8F961A6AB639F1E9FB2BE91F7F2F429F07CF9A68E80FCECD3654B525C60450D1
    ```
 
-   The builder reads only the pinned byte records and does not evaluate PowerShell. Upstream code is obtained separately because no license file was found at the pinned commit; this repository's license does not cover it.
+   For the November profile (`F8AD259C...`), use this pinned [November source](https://raw.githubusercontent.com/chen0416ccc-cpu/codex-windows-fast-patch-skill/87bea9f9143cf904a579bdab30e96fe93678232e/scripts/patch-computer-use-helper-win10.ps1), whose required SHA-256 is:
+
+   ```text
+   D56FD5CBD327C9D8A230BBB048536F23AD4779BA8D2154467773BD641A171310
+   ```
+
+   The builder reads only the pinned byte records and does not evaluate PowerShell. Sources are not interchangeable between layouts. Upstream code is obtained separately and is not covered by this repository's license; see [notices](THIRD_PARTY_NOTICES.md).
 
 4. Run preparation with explicit paths. Replace the placeholder values; select a new staging folder outside the repository and the installed runtime:
 
@@ -83,6 +90,8 @@ In the first PowerShell window, start the trial:
 ```
 
 Leave this controller running. It verifies the original hash/signature, replaces only the selected helper, and stops only helper processes whose path matches that file. The main ChatGPT app remains open. The trial automatically attempts restoration after 180 seconds unless accepted. **Automatic rollback depends on the controller staying alive**; it cannot protect against a power loss or a forcibly terminated controller.
+
+Start only while the app/runtime is stable. The lease coordinates repair controllers, not the vendor updater; checking a hash and replacing a file are separate operations. Retained atomic backups help recovery but do not provide a hard guarantee against a concurrent vendor update.
 
 Start a fresh Computer Use session through the normal app interface, then within the trial window:
 
@@ -117,7 +126,7 @@ The controller leaves its status and trial signals in the staging folder. A per-
 
 Independent Windows Graphics Capture diagnostics could acquire a frame and convert it outside the `FrameArrived` callback while the original helper still timed out. Moving callback work to an MTA worker restored the tested window captures. That supports a helper callback/threading issue; it does not directly prove the original deadlock.
 
-The successful test covered one window and its transient menu on one Windows 10 system. It did **not** establish combined all-monitor capture, each monitor separately, all applications, reboot persistence, timeout/cancellation correctness, or prolonged stability. See [validation](docs/validation.md).
+Testing covers one harmless window and its transient menu on one Windows 10 system, including placement on each of three monitors and a helper restart for the November profile. It does **not** establish a combined all-monitor image, all applications, Windows reboot persistence, timeout/cancellation correctness, or prolonged stability. Screenshots can include occluding content; raise the target and inspect actual pixels. See [validation](docs/validation.md).
 
 ## Optional update watcher
 
