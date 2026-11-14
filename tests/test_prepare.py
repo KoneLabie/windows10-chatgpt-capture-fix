@@ -20,6 +20,8 @@ class PreparationGuards(unittest.TestCase):
          "25A8CD31B5BC44C387CBF53EC3FE4CD314B5FCAC0D8D84201F444F1B2DB10FAB", 551),
         ("F8AD259CAA82BC2A62C26CB1A3428E558D26959DE7B4D5BCE0D708F5C40E81D9",
          "7BCF0B19481A96F478760A345B389AE47C44D6E2A6F745B331B9043CD9F7E804", 551),
+        ("A1EB13F38DC0214AE56D5C8B676B3740054A0818AB2BB68801B7AEDC85909DED",
+         "210502D9B2FD64F66613DDDD79BFA6942EB3CBC5472C10387AB72B9279406ADF", 552),
     ]
 
     def test_all_exact_profiles_remain_available(self):
@@ -29,11 +31,14 @@ class PreparationGuards(unittest.TestCase):
                 self.assertEqual(profile["candidate_sha256"], candidate)
                 self.assertEqual(profile["changed_bytes"], changed)
 
-    def test_unreviewed_cached_helper_is_rejected(self):
-        with self.assertRaisesRegex(prepare.PreparationError, "unsupported build"):
-            prepare.profile_for_hash("0EBB47BFAAF729E22BCDB08DCFCE1419EEFEDA80AFAEFED3EDBC088C24A2E778")
+    def test_unreviewed_cached_and_sibling_helpers_are_rejected(self):
+        for digest in ["0EBB47BFAAF729E22BCDB08DCFCE1419EEFEDA80AFAEFED3EDBC088C24A2E778",
+                       "6870546E69A84E825020DF17388D55F3C3FFC7F3D4622E80863A6BDF225FD3FD"]:
+            with self.subTest(digest=digest):
+                with self.assertRaisesRegex(prepare.PreparationError, "unsupported build"):
+                    prepare.profile_for_hash(digest)
 
-    def test_sources_cannot_be_crossed_between_layouts(self):
+    def test_sources_cannot_be_crossed_between_source_revisions(self):
         for key in prepare.LAYOUTS:
             layout = prepare.LAYOUTS[key]
             other = prepare.LAYOUTS["november" if key == "october" else "october"]

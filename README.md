@@ -13,12 +13,12 @@ This is a community experiment, **not an official OpenAI update**. It changes a 
 
 ## Supported target
 
-Only the three exact original executables below are supported. A matching product version alone is insufficient. The builder selects the profile and pinned upstream source by the complete original SHA-256; the controller requires its matching original/candidate pair, including for rollback.
+Only the four exact original executables below are supported. A matching product version alone is insufficient. The builder selects the profile and pinned upstream source by the complete original SHA-256; the controller requires its matching original/candidate pair, including for rollback.
 
 | Item | Tested value |
 | --- | --- |
 | OS | Windows 10 22H2, build 19045, x64 |
-| Computer Use library | `@oai/sky` 0.7.13 or 0.7.18, exact hashes below |
+| Computer Use library | `@oai/sky` 0.7.13, 0.7.18, or 0.7.21, exact hashes below |
 | Helper | `codex-computer-use.exe` |
 
 | Tested app package | Original SHA-256 | Repaired SHA-256 |
@@ -26,8 +26,9 @@ Only the three exact original executables below are supported. A matching produc
 | `26.1021.3705.0` | `11825CB78575D9099AED8F13D16F78B03C20A1A0EBC809CF78B406FB2F25F5F8` | `1071E8CC945EDDFC466637CF096852E670D21AFA396FE7CCA70B107C3DE3EFC5` |
 | `26.1027.3384.0` | `49C7F43DA0C2A9DBCADFB0C993058147018BF7C1D0FDE4360DE11ACE2C98F45D` | `25A8CD31B5BC44C387CBF53EC3FE4CD314B5FCAC0D8D84201F444F1B2DB10FAB` |
 | `26.1106.6628.0` | `F8AD259CAA82BC2A62C26CB1A3428E558D26959DE7B4D5BCE0D708F5C40E81D9` | `7BCF0B19481A96F478760A345B389AE47C44D6E2A6F745B331B9043CD9F7E804` |
+| `26.1111.2228.0` | `A1EB13F38DC0214AE56D5C8B676B3740054A0818AB2BB68801B7AEDC85909DED` | `210502D9B2FD64F66613DDDD79BFA6942EB3CBC5472C10387AB72B9279406ADF` |
 
-All three profiles passed a live screenshot/menu/keyboard trial after the original helper reproduced the capture timeouts. The November profile uses a separately reviewed layout and preserves both earlier profiles and their recovery paths. See the [validation record](docs/validation.md) for the exact scope.
+All four profiles passed a live screenshot/menu/keyboard trial after the original helper reproduced the capture timeouts. Each November profile uses a separately reviewed layout and preserves earlier profiles and their recovery paths. See the [validation record](docs/validation.md) for the exact scope.
 
 The tools reject unknown input/output hashes. They do not search for a similar version, patch every runtime, change BIOS/graphics settings, or install a driver. This is not a general fix for PC freezes, GPU resets, or every screenshot timeout.
 
@@ -59,7 +60,7 @@ Prerequisites: Python 3.9 or newer, PowerShell, the supported installed helper, 
    8F961A6AB639F1E9FB2BE91F7F2F429F07CF9A68E80FCECD3654B525C60450D1
    ```
 
-   For the November profile (`F8AD259C...`), use this pinned [November source](https://raw.githubusercontent.com/chen0416ccc-cpu/codex-windows-fast-patch-skill/87bea9f9143cf904a579bdab30e96fe93678232e/scripts/patch-computer-use-helper-win10.ps1), whose required SHA-256 is:
+   For either November profile (`F8AD259C...` or `A1EB13F3...`), use this pinned [November source](https://raw.githubusercontent.com/chen0416ccc-cpu/codex-windows-fast-patch-skill/87bea9f9143cf904a579bdab30e96fe93678232e/scripts/patch-computer-use-helper-win10.ps1), whose required SHA-256 is:
 
    ```text
    D56FD5CBD327C9D8A230BBB048536F23AD4779BA8D2154467773BD641A171310
@@ -126,7 +127,7 @@ The controller leaves its status and trial signals in the staging folder. A per-
 
 Independent Windows Graphics Capture diagnostics could acquire a frame and convert it outside the `FrameArrived` callback while the original helper still timed out. Moving callback work to an MTA worker restored the tested window captures. That supports a helper callback/threading issue; it does not directly prove the original deadlock.
 
-Testing covers one harmless window and its transient menu on one Windows 10 system, including placement on each of three monitors and a helper restart for the November profile. It does **not** establish a combined all-monitor image, all applications, Windows reboot persistence, timeout/cancellation correctness, or prolonged stability. Screenshots can include occluding content; raise the target and inspect actual pixels. See [validation](docs/validation.md).
+Testing covers one harmless window and its transient menu on one Windows 10 system, including placement on each of three monitors and a helper restart for both November profiles. It does **not** establish a combined all-monitor image, all applications, Windows reboot persistence, timeout/cancellation correctness, or prolonged stability. Screenshots can include occluding content; raise the target and inspect actual pixels. See [validation](docs/validation.md).
 
 ## Optional update watcher
 

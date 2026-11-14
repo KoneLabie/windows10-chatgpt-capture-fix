@@ -115,6 +115,44 @@ $multiChanged = New-SyntheticSnapshot 'multi-changed' $thirdRepairedHash -Size 1
 $multiChanged.helpers += [pscustomobject]@{relative_path=$cachedHelper.relative_path;sha256=('B'*64);size=1548592}
 Assert-True (-not (Test-KnownRepairTransition $multiOriginal $multiChanged)) 'an additional changed cached helper must still trigger investigation'
 
+$fourthOriginalHash = 'A1EB13F38DC0214AE56D5C8B676B3740054A0818AB2BB68801B7AEDC85909DED'
+$fourthRepairedHash = '210502D9B2FD64F66613DDDD79BFA6942EB3CBC5472C10387AB72B9279406ADF'
+$fourthOriginal = New-SyntheticSnapshot 'fourth-original' $fourthOriginalHash -Size 1549104
+$fourthRepaired = New-SyntheticSnapshot 'fourth-repaired' $fourthRepairedHash -Size 1549104
+$fourthState = New-WatchState
+$deliveriesBeforeFourth = $script:deliveries
+Assert-True ((Update-StateForSnapshot $fourthState $fourthOriginal $save $dispatch) -eq 'baseline') 'fourth original may establish a quiet baseline'
+Assert-True ((Update-StateForSnapshot $fourthState $fourthRepaired $save $dispatch) -eq 'repair-observed') 'fourth reviewed repair should be suppressed at its actual file size'
+Assert-True ($script:deliveries -eq $deliveriesBeforeFourth) 'fourth known repair must not queue itself'
+Assert-True ((Update-StateForSnapshot $fourthState $fourthRepaired $save $dispatch) -eq 'unchanged') 'repeated fourth-repair event must remain quiet'
+Assert-True ((Update-StateForSnapshot $fourthState $fourthOriginal $save $dispatch) -eq 'queued') 'fourth original reappearing after repair should queue'
+Assert-True ($script:deliveries -eq ($deliveriesBeforeFourth+1)) 'fourth reverted repair should queue exactly once'
+Assert-True ((Update-StateForSnapshot $fourthState $fourthOriginal $save $dispatch) -eq 'unchanged') 'repeated fourth-original event must not duplicate delivery'
+foreach($earlier in @(@($original,$repaired),@($secondOriginal,$secondRepaired),@($thirdOriginal,$thirdRepaired))) {
+    $crossedNew = New-SyntheticSnapshot 'crossed-fourth' $fourthRepairedHash -Size $earlier[0].helpers[0].size
+    $crossedOld = New-SyntheticSnapshot 'crossed-earlier' $earlier[1].helpers[0].sha256 -Size 1549104
+    Assert-True (-not (Test-KnownRepairTransition $earlier[0] $crossedNew)) 'earlier original with fourth candidate must not be suppressed'
+    Assert-True (-not (Test-KnownRepairTransition $fourthOriginal $crossedOld)) 'fourth original with earlier candidate must not be suppressed'
+}
+$fourthNewPackage = New-SyntheticSnapshot 'fourth-new-package' $fourthRepairedHash '2.0' 1549104
+Assert-True (-not (Test-KnownRepairTransition $fourthOriginal $fourthNewPackage)) 'fourth pair must not suppress a package-version change'
+$fourthOtherRuntime = New-SyntheticSnapshot 'fourth-other-runtime' $fourthRepairedHash -Size 1549104
+$fourthOtherRuntime.helpers[0].relative_path = 'runtime2\bin\node_modules\@oai\sky\bin\windows\codex-computer-use.exe'
+Assert-True (-not (Test-KnownRepairTransition $fourthOriginal $fourthOtherRuntime)) 'fourth pair must not suppress a runtime-path change'
+$fourthWrongSize = New-SyntheticSnapshot 'fourth-wrong-size' $fourthRepairedHash -Size 1549105
+Assert-True (-not (Test-KnownRepairTransition $fourthOriginal $fourthWrongSize)) 'fourth pair must not suppress a size change'
+$fourthUnknown = New-SyntheticSnapshot 'fourth-unknown' '6870546E69A84E825020DF17388D55F3C3FFC7F3D4622E80863A6BDF225FD3FD' -Size 1549104
+Assert-True ((Update-StateForSnapshot $fourthState $fourthUnknown $save $dispatch) -eq 'queued') 'unreviewed sibling hash replacing the selected helper must queue'
+Assert-True ($script:deliveries -eq ($deliveriesBeforeFourth+2)) 'unknown fourth replacement should produce one further delivery'
+$fourthMultiOriginal = New-SyntheticSnapshot 'fourth-multi-original' $fourthOriginalHash -Size 1549104
+$fourthMultiRepaired = New-SyntheticSnapshot 'fourth-multi-repaired' $fourthRepairedHash -Size 1549104
+$fourthMultiOriginal.helpers += $cachedHelper
+$fourthMultiRepaired.helpers += $cachedHelper
+Assert-True (Test-KnownRepairTransition $fourthMultiOriginal $fourthMultiRepaired) 'fourth repair with unchanged cached helper should be suppressed'
+$fourthMultiChanged = New-SyntheticSnapshot 'fourth-multi-changed' $fourthRepairedHash -Size 1549104
+$fourthMultiChanged.helpers += [pscustomobject]@{relative_path=$cachedHelper.relative_path;sha256=('C'*64);size=$cachedHelper.size}
+Assert-True (-not (Test-KnownRepairTransition $fourthMultiOriginal $fourthMultiChanged)) 'fourth repair alongside another changed helper must trigger investigation'
+
 $unknown = New-SyntheticSnapshot 'delivery-unknown' ('9'*64)
 $unknownDispatch = {param($snapshot) $script:deliveries++; [pscustomobject]@{status='unknown';detail='Synthetic ambiguous exit.'}}
 $deliveredBefore = $state.last_delivered_fingerprint
@@ -135,6 +173,7 @@ Assert-True (Test-RelevantUpdatePath (Join-Path $vendor 'runtimes\cua_node\abc\b
 Assert-True (Test-RelevantUpdatePath (Join-Path $vendor 'runtimes\cua_node\abc\bin\node_modules\@oai\sky\package.json') $vendor) 'package metadata event should match'
 Assert-True (Test-RelevantUpdatePath (Join-Path $vendor 'runtimes\cua_node\abc') $vendor) 'whole runtime rename should match'
 Assert-True (-not (Test-RelevantUpdatePath (Join-Path $vendor 'logs\unrelated.log') $vendor)) 'unrelated logs must not trigger reconciliation'
+Assert-True (-not (Test-RelevantUpdatePath (Join-Path $vendor 'runtimes\cua_node\abc\bin\node_modules\@oai\cua\bin\windows\codex-computer-use.exe') $vendor)) 'inactive cua sibling helper events must not expand the selected sky runtime scope'
 Assert-True (-not (Test-RelevantUpdatePath (Join-Path ($vendor+'-other') 'bin\codex.exe') $vendor)) 'similar sibling paths must not match vendor root'
 
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ('capturewatch-test-'+[Guid]::NewGuid().ToString('N'))
@@ -159,6 +198,11 @@ try {
     [IO.File]::WriteAllText($ignored,'unrelated layout')
     $snapshot3 = Get-CaptureSnapshot $runtime @('1.0','2.0')
     Assert-True ($snapshot3.fingerprint -eq $snapshot1.fingerprint) 'helper-like filename outside expected layout must be ignored'
+    $cuaSibling = Join-Path $runtime 'abc\bin\node_modules\@oai\cua\bin\windows\codex-computer-use.exe'
+    New-Item -ItemType Directory -Path (Split-Path -Parent $cuaSibling) -Force | Out-Null
+    [IO.File]::WriteAllText($cuaSibling,'inactive sibling fixture; not executable')
+    $snapshotWithSibling = Get-CaptureSnapshot $runtime @('1.0','2.0')
+    Assert-True ($snapshotWithSibling.fingerprint -eq $snapshot1.fingerprint) 'an inactive cua sibling must not enter the sky helper fingerprint'
     [IO.File]::WriteAllText($helper,'')
     $emptyRefused = $false
     try { Get-CaptureSnapshot $runtime @('1.0') | Out-Null } catch { $emptyRefused=$true }

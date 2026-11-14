@@ -26,6 +26,14 @@ The new mapping moves the busy and once branches to raw offsets `0x41979` and `0
 
 The exact candidate `7BCF0B19...7E804` changes 551 byte values across thirteen regions and preserves file length, imports, relocations, and the original exception-table prefix. Independent reconstruction produced the identical candidate. Each old profile continues to require its original pinned source; the new profile requires a separate pinned source and layout. Version labels never choose a profile.
 
+## November 14 second runtime update
+
+The signed `0.7.21` original `A1EB13F3...09DED` is 1,549,104 bytes. Compared with the preceding November build, `.rdata` grows by 640 virtual bytes and 512 raw bytes, and later file sections move by `0x200`. Only eight of the preceding layout's thirteen guards match. Its separately mapped vtable slot is raw `0x12BB48` (RVA `0x12CF48`); the exception-table append position is raw `0x156A78`; the wrapper remains at RVA `0x17C000` but moves to raw `0x176600`.
+
+The callback remains at RVA `0x42544`. All 3,124 instruction shapes and internal branch destinations match the preceding reviewed callback. Its 184 differing bytes are confined to 99 LEA displacement operands; no call operand changes. Independent review classified the ten differing referenced data prefixes as source-location records, dependency registry path text, or padding. Interface GUIDs, AddRef/Release implementations, and callback unwind bytes match. These comparisons do not prove complete runtime semantics.
+
+Candidate `210502D9...406ADF` changes 552 byte values across thirteen guarded regions. Its complete 512-byte worker region matches the preceding candidate. The build preserves all 314 imports, 2,437 relocations, and 2,826 original exception records, with two sorted new exception records. Independent reconstruction reproduced the full pinned candidate hash. This profile uses the November pinned source with its own layout and complete callback hash. The unused `@oai/cua` sibling is not a supported input even though its native sections match this original; helper routing and full-file identity are checked separately.
+
 ## Static checks
 
 - Entire original input and upstream text hashes are pinned before parsing or modification.

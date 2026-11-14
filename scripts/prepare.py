@@ -31,6 +31,11 @@ PROFILES = {
         "changed_bytes": 551,
         "layout": "november",
     },
+    "A1EB13F38DC0214AE56D5C8B676B3740054A0818AB2BB68801B7AEDC85909DED": {
+        "candidate_sha256": "210502D9B2FD64F66613DDDD79BFA6942EB3CBC5472C10387AB72B9279406ADF",
+        "changed_bytes": 552,
+        "layout": "november_a1",
+    },
 }
 # These layouts are selected only by the whole-file hashes above. They are not
 # templates for arbitrary files reporting the same library version.
@@ -59,6 +64,21 @@ LAYOUTS = {
         "vtable_raw": 0x12BB00, "callback_rva": 0x42544,
         "exception_rva": 0x150000, "exception_size": 0x8478,
         "exception_append": 0x156878,
+        "callback_sha256": "D91DCF08268861A239E394031B7FCEE921E0F3FCCE4DA4953ABFA4F038A8723E",
+        "adapt_november": True,
+    },
+    "november_a1": {
+        "file_size": 1549104,
+        "source_sha256": "D56FD5CBD327C9D8A230BBB048536F23AD4779BA8D2154467773BD641A171310",
+        "source_commit": "87bea9f9143cf904a579bdab30e96fe93678232e",
+        "source_profile": "0.7.17-7F73CF56-mapped-to-exact-0.7.21-A1EB13F3",
+        "source_marker": "Name = '@oai/sky 0.7.17 helper 7F73CF56",
+        "sky_version": "0.7.21",
+        "section_count": 9, "section_rva": 0x17C000, "section_raw": 0x176600,
+        "vtable_raw": 0x12BB48, "callback_rva": 0x42544,
+        "exception_rva": 0x150000, "exception_size": 0x8478,
+        "exception_append": 0x156A78,
+        "callback_sha256": "43987630A774CBC73EB06AA282E1EBA8EF457586D40A8493E59E14A959117362",
         "adapt_november": True,
     },
 }
@@ -109,20 +129,29 @@ def parse_regions(source_data, layout):
     must(len(regions) == 13, "Expected thirteen reviewed regions.")
     must(len({r["name"] for r in regions}) == 13, "Duplicate region name.")
     if layout["adapt_november"]:
-        adapt_november_regions(regions)
+        adapt_november_regions(regions, layout)
     return regions
 
 
-def adapt_november_regions(regions):
-    """Apply the separately reviewed F8AD mapping to pinned upstream records."""
+def adapt_november_regions(regions, layout):
+    """Apply separately reviewed exact-build mappings to pinned upstream data."""
     by_name = {r["name"]: r for r in regions}
     by_name["frame-arrived-busy-return"]["offset"] = 0x41979
     by_name["frame-arrived-once-flag"]["offset"] = 0x4198A
+    by_name["frame-arrived-vtable"]["offset"] = layout["vtable_raw"]
     by_name["frame-arrived-vtable"]["original"] = struct.pack("<Q", 0x140042544)
+    by_name["pe-certificate-directory"]["original"] = struct.pack("<II", layout["section_raw"], 0x3D30)
+    by_name["mta-wrapper-and-unwind"]["offset"] = layout["section_raw"]
+    # A1's larger .rdata moved later raw sections, with their RVAs unchanged.
+    section_header = bytearray(by_name["mta-section-header"]["patched"])
+    must(struct.unpack_from("<I", section_header, 20)[0] == 0x176400,
+         "Unexpected upstream wrapper file offset.")
+    struct.pack_into("<I", section_header, 20, layout["section_raw"])
+    by_name["mta-section-header"]["patched"] = bytes(section_header)
     for name in ("pe-exception-directory-size", "pdata-virtual-size"):
         by_name[name]["original"] = struct.pack("<I", 0x8478)
         by_name[name]["patched"] = struct.pack("<I", 0x8490)
-    by_name["mta-runtime-functions"]["offset"] = 0x156878
+    by_name["mta-runtime-functions"]["offset"] = layout["exception_append"]
     worker = bytearray(by_name["mta-wrapper-and-unwind"]["patched"])
     must(worker[0x96] == 0xE8, "Expected direct original-callback call.")
     upstream_target = 0x17C000 + 0x9B + struct.unpack_from("<i", worker, 0x97)[0]
@@ -252,7 +281,7 @@ def validate_original_layout(original, before, layout):
          "Original callback vtable changed.")
     if layout["adapt_november"]:
         callback = original[before.offset(0x42544):before.offset(0x45BDE)]
-        must(sha(callback) == "D91DCF08268861A239E394031B7FCEE921E0F3FCCE4DA4953ABFA4F038A8723E",
+        must(sha(callback) == layout["callback_sha256"],
              "Callback body changed.")
         must(original[0x41979:0x4197F] == bytes.fromhex("0f855b310000"), "Busy branch changed.")
         must(0x42579 + 6 + struct.unpack_from("<i", original, 0x4197B)[0] == 0x456DA,
